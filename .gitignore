@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Build artifacts
+build/
+dist/
+*.spec.bak
+
+# Local runtime data
+output/
+.biliarchive.local.json
+local_env.bat
+
+# Tooling
+.agent/
+
+# IDE
+.vscode/
+.idea/
