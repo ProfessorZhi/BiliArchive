@@ -34,10 +34,7 @@ def _save_local_settings(data: dict) -> None:
 
 _LOCAL_SETTINGS = _load_local_settings()
 
-SESSDATA = os.getenv(
-    "BILIBILI_SESSDATA",
-    "9551cf15%2C1787198747%2Cd3323%2A22CjDn0c9CUb-1skh5TOrzfVm9th_winpnASeJuFzsg9rpOD1tH2q-0yB2vz8MPow5BDYSVmJna2F6SXFOUllicjhlMDlqak53UjBFMmY4S0M0SW9INTJ2NGJXWV96QTRsd0Q3RUF4TmljLXlnVWIxNTZISmNmY09yM0FMcXM4TTk0RE9seXV6MEJ3IIEC",
-)
+SESSDATA = os.getenv("BILIBILI_SESSDATA", "").strip()
 
 BASE_HEADERS = {
     "User-Agent": (
@@ -46,8 +43,9 @@ BASE_HEADERS = {
         "Chrome/120.0.0.0 Safari/537.36"
     ),
     "Referer": "https://www.bilibili.com",
-    "Cookie": f"SESSDATA={SESSDATA}",
 }
+if SESSDATA:
+    BASE_HEADERS["Cookie"] = f"SESSDATA={SESSDATA}"
 
 API_VIDEO_INFO = "https://api.bilibili.com/x/web-interface/view"
 API_COMMENTS_MAIN = "https://api.bilibili.com/x/v2/reply/wbi/main"
