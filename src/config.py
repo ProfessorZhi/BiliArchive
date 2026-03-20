@@ -34,7 +34,7 @@ def _save_local_settings(data: dict) -> None:
 
 _LOCAL_SETTINGS = _load_local_settings()
 
-SESSDATA = os.getenv("BILIBILI_SESSDATA", "").strip()
+SESSDATA = os.getenv("BILIBILI_SESSDATA", "")
 
 BASE_HEADERS = {
     "User-Agent": (
