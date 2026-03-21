@@ -1,7 +1,5 @@
-# -*- coding: utf-8 -*-
-"""
-MiniMax OpenAI 兼容接口客户端。
-"""
+﻿# -*- coding: utf-8 -*-
+"""MiniMax OpenAI 兼容接口客户端。"""
 
 from __future__ import annotations
 
@@ -15,6 +13,46 @@ import config
 
 def has_api_key() -> bool:
     return bool(config.MINIMAX_API_KEY.strip())
+
+
+def validate_api_key(api_key: str, model: str) -> tuple[bool, str]:
+    api_key = (api_key or "").strip()
+    model = (model or "MiniMax-M2.7").strip()
+    if not api_key:
+        return True, "未填写 MiniMax API Key，将跳过 AI 点评。"
+
+    url = config.MINIMAX_BASE_URL.rstrip("/") + "/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    body = {
+        "model": model,
+        "messages": [{"role": "user", "content": "请回复：ok"}],
+        "temperature": 0.1,
+        "max_tokens": 8,
+    }
+
+    try:
+        resp = requests.post(url, headers=headers, json=body, timeout=30)
+        if resp.status_code == 401:
+            return False, "MiniMax API Key 无效，返回 401。"
+        if resp.status_code == 403:
+            return False, "MiniMax API Key 无权限，返回 403。"
+        if resp.status_code >= 400:
+            try:
+                payload = resp.json()
+                message = payload.get("error", {}).get("message") or payload.get("message")
+            except Exception:
+                message = resp.text[:200]
+            return False, f"MiniMax 检测失败：{message or ('HTTP ' + str(resp.status_code))}"
+
+        payload = resp.json()
+        if payload.get("choices"):
+            return True, f"MiniMax API Key 有效，模型：{model}"
+        return False, "MiniMax 返回结果异常，未发现 choices。"
+    except Exception as exc:
+        return False, f"MiniMax 检测失败：{exc}"
 
 
 def _clip(text: str, max_len: int) -> str:

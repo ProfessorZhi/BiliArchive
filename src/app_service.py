@@ -84,12 +84,25 @@ def save_bilibili_video(
     subtitles = bilibili_api.get_subtitles(video_info["aid"], video_info["cid"])
     _emit(progress_callback, f"字幕获取完成，共 {len(subtitles)} 组", 25)
 
+    last_progress_emit = {"fetched": -1, "percent": -1}
+
     def on_comment_progress(progress: bilibili_api.CommentProgress) -> None:
         percent = _map_range(25, 68, progress.total_fetched, max(progress.total_target, 1))
+        should_emit = (
+            progress.total_fetched <= 3
+            or progress.total_fetched - last_progress_emit["fetched"] >= 5
+            or percent > last_progress_emit["percent"]
+            or progress.total_fetched >= progress.total_target > 0
+        )
+        if not should_emit:
+            return
+
         if progress.total_target > 0:
             message = f"已抓取评论 {progress.total_fetched} 条，页面显示总评论 {progress.total_target} 条"
         else:
             message = f"已抓取评论 {progress.total_fetched} 条"
+        last_progress_emit["fetched"] = progress.total_fetched
+        last_progress_emit["percent"] = percent
         _emit(progress_callback, message, percent)
 
     comments = bilibili_api.get_all_comments(

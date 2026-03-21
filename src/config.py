@@ -13,7 +13,12 @@ from typing import Any
 APP_NAME = "BiliArchive"
 
 if getattr(sys, "frozen", False):
-    PROJECT_ROOT = os.path.dirname(os.path.abspath(sys.executable))
+    executable_dir = os.path.dirname(os.path.abspath(sys.executable))
+    parent_dir = os.path.dirname(executable_dir)
+    if os.path.basename(executable_dir).lower() == "dist" and os.path.isdir(os.path.join(parent_dir, "src")):
+        PROJECT_ROOT = parent_dir
+    else:
+        PROJECT_ROOT = executable_dir
 else:
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -57,6 +62,7 @@ API_VIDEO_INFO = "https://api.bilibili.com/x/web-interface/view"
 API_COMMENTS_MAIN = "https://api.bilibili.com/x/v2/reply/wbi/main"
 API_COMMENTS_LIST = "https://api.bilibili.com/x/v2/reply"
 API_COMMENTS_REPLY = "https://api.bilibili.com/x/v2/reply/reply"
+API_COMMENTS_DETAIL = "https://api.bilibili.com/x/v2/reply/detail"
 API_COMMENTS_COUNT = "https://api.bilibili.com/x/v2/reply/count"
 API_PLAYER_WBI = "https://api.bilibili.com/x/player/wbi/v2"
 API_NAV = "https://api.bilibili.com/x/web-interface/nav"
@@ -66,12 +72,22 @@ REPLY_PAGE_SIZE = 20
 REQUEST_DELAY = 0.35
 
 
+def build_cookie_header(login_info: str) -> str:
+    value = (login_info or "").strip()
+    if not value:
+        return ""
+    if "SESSDATA=" in value or (";" in value and "=" in value):
+        return value
+    return f"SESSDATA={value}"
+
+
 def _sync_headers() -> None:
     global OUTPUT_DIR
     OUTPUT_DIR = os.path.abspath((OUTPUT_DIR or DEFAULT_OUTPUT_DIR).strip())
     BASE_HEADERS.pop("Cookie", None)
-    if SESSDATA:
-        BASE_HEADERS["Cookie"] = f"SESSDATA={SESSDATA}"
+    cookie_header = build_cookie_header(SESSDATA)
+    if cookie_header:
+        BASE_HEADERS["Cookie"] = cookie_header
 
 
 def sanitize_filename(name: str) -> str:

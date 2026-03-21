@@ -31,17 +31,27 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
+import bilibili_api
 import config
+import minimax_client
 from app_service import SaveOptions, SaveResult, save_bilibili_video
 
 
 ICON_PATH = os.path.join(RESOURCE_ROOT, "assets", "app_icon.ico")
 APP_USER_MODEL_ID = "ProfessorZhi.BiliArchive"
+
+
+def _short_message(message: str, limit: int = 120) -> str:
+    normalized = " ".join((message or "").split())
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[: limit - 3] + "..." if limit > 3 else normalized[:limit]
 
 
 def _set_windows_app_id() -> None:
@@ -58,7 +68,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("客户端设置")
         self.setModal(True)
-        self.resize(660, 300)
+        self.resize(720, 400)
 
         settings = config.get_runtime_settings()
 
@@ -66,7 +76,7 @@ class SettingsDialog(QDialog):
         form = QFormLayout()
 
         self.login_input = QLineEdit(settings["sessdata"])
-        self.login_input.setPlaceholderText("这里只填 SESSDATA 的值；留空则按未登录方式运行")
+        self.login_input.setPlaceholderText("可填写 SESSDATA，或直接粘贴整串浏览器 Cookie；留空则按未登录方式运行")
         self.login_input.setEchoMode(QLineEdit.PasswordEchoOnEdit)
 
         output_row = QHBoxLayout()
@@ -84,15 +94,32 @@ class SettingsDialog(QDialog):
         self.model_input = QLineEdit(settings["minimax_model"])
         self.model_input.setPlaceholderText("例如: MiniMax-M2.7")
 
+        self.login_status_label = QLabel("待检测")
+        self.login_status_label.setWordWrap(True)
+        self.login_status_label.setStyleSheet("color: #5f6b7a;")
+
+        self.api_status_label = QLabel("待检测")
+        self.api_status_label.setWordWrap(True)
+        self.api_status_label.setStyleSheet("color: #5f6b7a;")
+
         form.addRow("B站登录信息", self.login_input)
+        form.addRow("登录检测", self.login_status_label)
         form.addRow("输出文件夹", output_row)
         form.addRow("MiniMax API Key", self.api_key_input)
+        form.addRow("API 检测", self.api_status_label)
         form.addRow("MiniMax 模型", self.model_input)
         layout.addLayout(form)
 
+        detect_row = QHBoxLayout()
+        detect_row.addStretch(1)
+        self.detect_button = QPushButton("立即检测")
+        self.detect_button.clicked.connect(self.run_validation)
+        detect_row.addWidget(self.detect_button)
+        layout.addLayout(detect_row)
+
         login_help = QLabel(
-            "填写提示：这里只填浏览器 Cookie 里的 SESSDATA 值，不要粘贴整串 Cookie。"
-            "登录 B站后按 F12，在 Cookies 中找到 SESSDATA 的 Value，复制到这里即可。"
+            "填写提示：这里既支持只填 SESSDATA，也支持直接粘贴整串浏览器 Cookie。"
+            "如果楼中楼或字幕接口不稳定，优先尝试粘贴整串 Cookie。登录 B站后按 F12，在 Cookies 中复制 SESSDATA 的 Value，或直接复制请求里的整串 Cookie。"
         )
         login_help.setWordWrap(True)
         login_help.setStyleSheet("color: #5f6b7a;")
@@ -121,14 +148,32 @@ class SettingsDialog(QDialog):
         if directory:
             self.output_input.setText(directory)
 
+    def run_validation(self) -> tuple[bool, bool]:
+        sessdata = self.login_input.text().strip()
+        api_key = self.api_key_input.text().strip()
+        model = self.model_input.text().strip() or "MiniMax-M2.7"
+
+        login_ok, login_message = bilibili_api.validate_sessdata(sessdata)
+        api_ok, api_message = minimax_client.validate_api_key(api_key, model)
+
+        self.login_status_label.setText(login_message)
+        self.login_status_label.setStyleSheet(f"color: {'#1f7a1f' if login_ok else '#c0392b'};")
+        self.api_status_label.setText(api_message)
+        self.api_status_label.setStyleSheet(f"color: {'#1f7a1f' if api_ok else '#c0392b'};")
+        return login_ok, api_ok
+
     def accept(self) -> None:
         output_dir = self.output_input.text().strip() or config.DEFAULT_OUTPUT_DIR
-        config.save_runtime_settings(
-            self.login_input.text(),
-            output_dir,
-            self.api_key_input.text(),
-            self.model_input.text(),
-        )
+        sessdata = self.login_input.text().strip()
+        api_key = self.api_key_input.text().strip()
+        model = self.model_input.text().strip() or "MiniMax-M2.7"
+
+        login_ok, api_ok = self.run_validation()
+        if not login_ok or not api_ok:
+            QMessageBox.warning(self, "检测未通过", "请先根据检测结果修正设置后再保存。")
+            return
+
+        config.save_runtime_settings(sessdata, output_dir, api_key, model)
         super().accept()
 
 
@@ -181,6 +226,8 @@ class MainWindow(QMainWindow):
 
         self.hint = QLabel()
         self.hint.setWordWrap(True)
+        self.hint.setTextFormat(Qt.PlainText)
+        self.hint.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.hint.setStyleSheet("color: #5f6b7a;")
         layout.addWidget(self.hint)
 
@@ -283,7 +330,13 @@ class MainWindow(QMainWindow):
 
     def _refresh_settings_hint(self) -> None:
         settings = config.get_runtime_settings()
-        login_state = "已登录" if settings["sessdata"] else "未登录"
+        login_info = settings["sessdata"].strip()
+        if not login_info:
+            login_state = "未登录"
+        else:
+            login_ok, login_message = bilibili_api.validate_sessdata(login_info)
+            login_state = login_message if login_ok else f"异常：{login_message}"
+
         self.hint.setText(
             f"支持评论抓取、字幕导出、视频下载和 AI 点评。当前输出目录：{settings['output_dir']}；B站状态：{login_state}。"
         )
