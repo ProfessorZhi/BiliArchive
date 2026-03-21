@@ -112,11 +112,11 @@ class SettingsDialog(QDialog):
         output_row.addWidget(browse_button)
 
         self.api_key_input = QLineEdit(settings["minimax_api_key"])
-        self.api_key_input.setPlaceholderText("留空则跳过 AI 点评")
+        self.api_key_input.setPlaceholderText("填写 AI API Key；留空则跳过 AI 点评")
         self.api_key_input.setEchoMode(QLineEdit.PasswordEchoOnEdit)
 
         self.model_input = QLineEdit(settings["minimax_model"])
-        self.model_input.setPlaceholderText("例如：MiniMax-M2.7")
+        self.model_input.setPlaceholderText("例如：MiniMax-M2.7 或你实际使用的模型名")
 
         self.sessdata_status_label = QLabel("尚未检测")
         self.cookie_status_label = QLabel("尚未检测")
@@ -131,9 +131,9 @@ class SettingsDialog(QDialog):
         form.addRow("整串 Cookie", self.cookie_input)
         form.addRow("Cookie 检测", self.cookie_status_label)
         form.addRow("输出文件夹", output_row)
-        form.addRow("MiniMax API Key", self.api_key_input)
+        form.addRow("AI API Key", self.api_key_input)
         form.addRow("API 检测", self.api_status_label)
-        form.addRow("MiniMax 模型", self.model_input)
+        form.addRow("AI 模型", self.model_input)
         layout.addLayout(form)
 
         detect_row = QHBoxLayout()
@@ -244,7 +244,7 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, "登录信息无效", "整串 Cookie 检测未通过，请检查后再保存。")
             return
         if not api_ok:
-            QMessageBox.warning(self, "API 设置无效", "MiniMax API Key 或模型检测未通过，请检查后再保存。")
+            QMessageBox.warning(self, "API 设置无效", "AI API Key 或模型检测未通过，请检查后再保存。")
             return
 
         config.save_runtime_settings(login_mode, sessdata, cookie, output_dir, api_key, model)

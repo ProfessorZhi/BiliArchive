@@ -80,7 +80,7 @@ python src/main.py <BV号或视频链接>
 
 ### 生成 AI 点评
 
-勾选后会调用 MiniMax 生成 AI 点评并写入 Markdown。
+勾选后会调用已配置的 AI API 生成 AI 点评并写入 Markdown。
 
 如果没有配置 API Key，程序会跳过 AI 点评。
 
@@ -153,13 +153,19 @@ SESSDATA=...; bili_jct=...; DedeUserID=...; buvid3=...
 - 可以自定义导出目录
 - 后续 JSON、Markdown、视频文件都会保存到这里
 
-### MiniMax API Key
+### AI API Key
 
 - 用于生成 AI 点评
 - 可留空
 - 留空时程序会跳过 AI 点评
 
-### MiniMax 模型
+说明：
+
+- 当前程序默认使用已经接好的 AI 接口实现
+- 界面里填写的是本地使用的 AI API Key
+- 不建议把真实 API Key 写进源码或提交到 GitHub
+
+### AI 模型
 
 默认值：
 
@@ -212,6 +218,6 @@ dist/BiliArchive.exe
 ## 9. 安全建议
 
 - 不要把真实的 B 站登录信息提交到 GitHub
-- 不要把真实的 MiniMax API Key 提交到 GitHub
+- 不要把真实的 AI API Key 提交到 GitHub
 - 不要把 `.biliarchive.local.json` 提交到 GitHub
 - 不要把 `output/` 里的个人测试数据直接公开上传
