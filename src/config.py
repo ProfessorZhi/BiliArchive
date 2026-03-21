@@ -44,7 +44,9 @@ def _save_local_settings(data: dict[str, Any]) -> None:
 
 _LOCAL_SETTINGS = _load_local_settings()
 OUTPUT_DIR = os.getenv("BILIARCHIVE_OUTPUT_DIR", _LOCAL_SETTINGS.get("output_dir", DEFAULT_OUTPUT_DIR))
+LOGIN_MODE = os.getenv("BILIARCHIVE_LOGIN_MODE", _LOCAL_SETTINGS.get("login_mode", "none"))
 SESSDATA = os.getenv("BILIBILI_SESSDATA", _LOCAL_SETTINGS.get("sessdata", ""))
+COOKIE = os.getenv("BILIBILI_COOKIE", _LOCAL_SETTINGS.get("cookie", ""))
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", _LOCAL_SETTINGS.get("minimax_api_key", ""))
 MINIMAX_BASE_URL = os.getenv("MINIMAX_BASE_URL", "https://api.minimaxi.com/v1")
 MINIMAX_MODEL = os.getenv("MINIMAX_MODEL", _LOCAL_SETTINGS.get("minimax_model", "MiniMax-M2.7"))
@@ -60,10 +62,9 @@ BASE_HEADERS = {
 
 API_VIDEO_INFO = "https://api.bilibili.com/x/web-interface/view"
 API_COMMENTS_MAIN = "https://api.bilibili.com/x/v2/reply/wbi/main"
-API_COMMENTS_LIST = "https://api.bilibili.com/x/v2/reply"
-API_COMMENTS_REPLY = "https://api.bilibili.com/x/v2/reply/reply"
 API_COMMENTS_DETAIL = "https://api.bilibili.com/x/v2/reply/detail"
 API_COMMENTS_COUNT = "https://api.bilibili.com/x/v2/reply/count"
+API_PLAYER = "https://api.bilibili.com/x/player/v2"
 API_PLAYER_WBI = "https://api.bilibili.com/x/player/wbi/v2"
 API_NAV = "https://api.bilibili.com/x/web-interface/nav"
 
@@ -72,20 +73,22 @@ REPLY_PAGE_SIZE = 20
 REQUEST_DELAY = 0.35
 
 
-def build_cookie_header(login_info: str) -> str:
-    value = (login_info or "").strip()
-    if not value:
-        return ""
-    if "SESSDATA=" in value or (";" in value and "=" in value):
-        return value
-    return f"SESSDATA={value}"
+def build_cookie_header(login_mode: str | None = None, sessdata: str | None = None, cookie: str | None = None) -> str:
+    mode = (LOGIN_MODE if login_mode is None else login_mode).strip().lower() or "none"
+    sessdata_value = (SESSDATA if sessdata is None else sessdata).strip()
+    cookie_value = (COOKIE if cookie is None else cookie).strip()
+    if mode == "cookie":
+        return cookie_value
+    if mode == "sessdata":
+        return f"SESSDATA={sessdata_value}" if sessdata_value else ""
+    return ""
 
 
 def _sync_headers() -> None:
     global OUTPUT_DIR
     OUTPUT_DIR = os.path.abspath((OUTPUT_DIR or DEFAULT_OUTPUT_DIR).strip())
     BASE_HEADERS.pop("Cookie", None)
-    cookie_header = build_cookie_header(SESSDATA)
+    cookie_header = build_cookie_header()
     if cookie_header:
         BASE_HEADERS["Cookie"] = cookie_header
 
@@ -109,7 +112,9 @@ def ensure_output_dir() -> str:
 
 def get_runtime_settings() -> dict[str, str]:
     return {
+        "login_mode": LOGIN_MODE,
         "sessdata": SESSDATA,
+        "cookie": COOKIE,
         "output_dir": OUTPUT_DIR,
         "minimax_api_key": MINIMAX_API_KEY,
         "minimax_model": MINIMAX_MODEL,
@@ -117,19 +122,25 @@ def get_runtime_settings() -> dict[str, str]:
 
 
 def save_runtime_settings(
+    login_mode: str,
     sessdata: str,
+    cookie: str,
     output_dir: str,
     minimax_api_key: str | None = None,
     minimax_model: str | None = None,
 ) -> None:
-    global SESSDATA, OUTPUT_DIR, MINIMAX_API_KEY, MINIMAX_MODEL, _LOCAL_SETTINGS
+    global LOGIN_MODE, SESSDATA, COOKIE, OUTPUT_DIR, MINIMAX_API_KEY, MINIMAX_MODEL, _LOCAL_SETTINGS
 
+    LOGIN_MODE = (login_mode or "none").strip().lower()
     SESSDATA = (sessdata or "").strip()
+    COOKIE = (cookie or "").strip()
     OUTPUT_DIR = os.path.abspath((output_dir or DEFAULT_OUTPUT_DIR).strip())
     MINIMAX_API_KEY = (MINIMAX_API_KEY if minimax_api_key is None else minimax_api_key.strip())
     MINIMAX_MODEL = (MINIMAX_MODEL if minimax_model is None else (minimax_model.strip() or "MiniMax-M2.7"))
 
+    _LOCAL_SETTINGS["login_mode"] = LOGIN_MODE
     _LOCAL_SETTINGS["sessdata"] = SESSDATA
+    _LOCAL_SETTINGS["cookie"] = COOKIE
     _LOCAL_SETTINGS["output_dir"] = OUTPUT_DIR
     _LOCAL_SETTINGS["minimax_api_key"] = MINIMAX_API_KEY
     _LOCAL_SETTINGS["minimax_model"] = MINIMAX_MODEL
@@ -138,7 +149,7 @@ def save_runtime_settings(
 
 
 def save_minimax_settings(api_key: str, model: str) -> None:
-    save_runtime_settings(SESSDATA, OUTPUT_DIR, api_key, model)
+    save_runtime_settings(LOGIN_MODE, SESSDATA, COOKIE, OUTPUT_DIR, api_key, model)
 
 
 def get_minimax_settings() -> tuple[str, str]:

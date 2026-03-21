@@ -1,7 +1,5 @@
-# -*- coding: utf-8 -*-
-"""
-Bilibili API 交互。
-"""
+﻿# -*- coding: utf-8 -*-
+"""Bilibili API 封装。"""
 
 from __future__ import annotations
 
@@ -40,13 +38,12 @@ def refresh_session_headers() -> None:
     _SESSION.headers.update(config.BASE_HEADERS)
 
 
-def validate_sessdata(sessdata: str) -> tuple[bool, str]:
-    sessdata = (sessdata or "").strip()
-    if not sessdata:
-        return True, "未填写登录信息，将按未登录方式运行。"
+def _validate_login_value(cookie_header: str, empty_message: str) -> tuple[bool, str]:
+    if not cookie_header:
+        return True, empty_message
 
     headers = dict(config.BASE_HEADERS)
-    headers["Cookie"] = config.build_cookie_header(sessdata)
+    headers["Cookie"] = cookie_header
     last_error: Exception | None = None
 
     for attempt in range(REQUEST_RETRIES):
@@ -62,7 +59,7 @@ def validate_sessdata(sessdata: str) -> tuple[bool, str]:
                 user_name = data.get("uname", "")
                 if user_name:
                     return True, f"登录信息有效，当前账号：{user_name}"
-                return True, "登录信息有效。"
+                return True, "登录信息有效"
             return False, "登录信息无效，或当前登录状态已失效。"
         except Exception as exc:
             last_error = exc
@@ -72,12 +69,24 @@ def validate_sessdata(sessdata: str) -> tuple[bool, str]:
 
     return False, f"登录信息检测失败：{last_error}"
 
+
+def validate_sessdata(sessdata: str) -> tuple[bool, str]:
+    sessdata = (sessdata or "").strip()
+    cookie_header = config.build_cookie_header("sessdata", sessdata=sessdata, cookie="")
+    return _validate_login_value(cookie_header, "未填写 SESSDATA，将按未登录方式运行。")
+
+
+def validate_cookie(cookie: str) -> tuple[bool, str]:
+    cookie = (cookie or "").strip()
+    return _validate_login_value(cookie, "未填写整串 Cookie，将按未登录方式运行。")
+
+
 def _log(message: str) -> None:
     try:
         print(message)
     except UnicodeEncodeError:
         if hasattr(sys.stdout, "buffer"):
-            sys.stdout.buffer.write((message + "\n").encode("gbk", errors="replace"))
+            sys.stdout.buffer.write((message + "`n").encode("gbk", errors="replace"))
         else:
             print(message.encode("ascii", errors="replace").decode("ascii"))
 
@@ -98,35 +107,35 @@ def _request_json(
             try:
                 return resp.json()
             except ValueError as exc:
-                snippet = resp.text[:200].strip().replace("\n", " ")
+                snippet = resp.text[:160].strip().replace("`n", " ")
                 raise RuntimeError(
-                    f"{api_name} 返回了非 JSON 内容，状态码 {resp.status_code}，内容片段: {snippet or '<empty>'}"
+                    f"{api_name} 返回了非 JSON 内容，状态码 {resp.status_code}，内容片段：{snippet or '<empty>'}"
                 ) from exc
         except Exception as exc:
             last_error = exc
             if attempt < REQUEST_RETRIES - 1:
                 time.sleep(0.25 * (attempt + 1))
                 continue
-            raise RuntimeError(f"{api_name} 请求失败: {exc}") from exc
-    raise RuntimeError(f"{api_name} 请求失败: {last_error}")
+            raise RuntimeError(f"{api_name} 请求失败：{exc}") from exc
+    raise RuntimeError(f"{api_name} 请求失败：{last_error}")
 
 
 def extract_bvid(input_str: str) -> str:
     match = re.search(r"(BV[a-zA-Z0-9]+)", input_str.strip())
     if match:
         return match.group(1)
-    raise ValueError(f"无法从输入中提取 BV 号: {input_str}")
+    raise ValueError(f"无法从输入中提取 BV 号：{input_str}")
 
 
 def get_video_info(bvid: str) -> dict:
-    _log(f"正在获取视频信息: {bvid}")
+    _log(f"正在获取视频信息：{bvid}")
     data = _request_json(
         config.API_VIDEO_INFO,
         "视频信息接口",
         params={"bvid": bvid},
     )
     if data.get("code") != 0:
-        raise RuntimeError(f"获取视频信息失败: {data.get('message', '未知错误')}")
+        raise RuntimeError(f"获取视频信息失败：{data.get('message', '未知错误')}")
 
     video = data["data"]
     return {
@@ -164,7 +173,7 @@ def get_comment_count(oid: int) -> int:
         params={"oid": oid, "type": 1},
     )
     if data.get("code") != 0:
-        raise RuntimeError(f"获取评论总数失败: {data.get('message', '未知错误')}")
+        raise RuntimeError(f"获取评论总数失败：{data.get('message', '未知错误')}")
     return int(data.get("data", {}).get("count", 0))
 
 
@@ -224,45 +233,29 @@ def _get_sub_replies(oid: int, root_rpid: int) -> list[dict]:
     all_replies: list[dict] = []
     seen: set[int] = set()
 
-    while True:
-        data = _request_json(
-            config.API_COMMENTS_DETAIL,
-            "子评论详情接口",
-            params={
-                "oid": oid,
-                "type": 1,
-                "root": root_rpid,
-                "ps": config.REPLY_PAGE_SIZE,
-            },
-        )
-        if data.get("code") != 0:
-            _log(f"获取子评论失败(rpid={root_rpid})：{data.get('message', '未知错误')}")
-            break
+    data = _request_json(
+        config.API_COMMENTS_DETAIL,
+        "子评论详情接口",
+        params={
+            "oid": oid,
+            "type": 1,
+            "root": root_rpid,
+            "ps": config.REPLY_PAGE_SIZE,
+        },
+    )
+    if data.get("code") != 0:
+        _log(f"获取子评论失败（rpid={root_rpid}）：{data.get('message', '未知错误')}")
+        return all_replies
 
-        root = data.get("data", {}).get("root") or {}
-        replies = root.get("replies") or []
-        if not replies:
-            break
-
-        new_items = 0
-        for reply in replies:
-            reply_rpid = int(reply.get("rpid") or 0)
-            if reply_rpid and reply_rpid in seen:
-                continue
-            if reply_rpid:
-                seen.add(reply_rpid)
-            all_replies.append(_format_comment(reply))
-            new_items += 1
-
-        if new_items == 0:
-            break
-
-        total = int(root.get("rcount") or root.get("count") or len(all_replies))
-        if len(all_replies) >= total:
-            break
-
-        break
-
+    root = data.get("data", {}).get("root") or {}
+    replies = root.get("replies") or []
+    for reply in replies:
+        reply_rpid = int(reply.get("rpid") or 0)
+        if reply_rpid and reply_rpid in seen:
+            continue
+        if reply_rpid:
+            seen.add(reply_rpid)
+        all_replies.append(_format_comment(reply))
     return all_replies
 
 
@@ -270,7 +263,6 @@ def _should_fetch_sub_replies(raw_comment: dict) -> bool:
     inline_replies = raw_comment.get("replies") or []
     if inline_replies:
         return True
-
     if int(raw_comment.get("rcount") or 0) > 0:
         return True
 
@@ -309,9 +301,9 @@ def _fill_sub_replies_parallel(oid: int, page_comments: list[tuple[dict, dict]])
                     seen = {item.get("rpid") for item in existing}
                     merged = existing + [item for item in fetched_replies if item.get("rpid") not in seen]
                     formatted["replies"] = merged
-                    _log(f"\u8865\u6293\u5b50\u8bc4\u8bba {len(fetched_replies)} \u6761: {user_name}")
+                    _log(f"补抓子评论 {len(fetched_replies)} 条：{user_name}")
             except Exception as exc:
-                _log(f"\u8865\u6293\u5b50\u8bc4\u8bba\u5931\u8d25: {user_name} ({exc})")
+                _log(f"补抓子评论失败：{user_name} ({exc})")
 
 
 def get_all_comments(
@@ -319,6 +311,7 @@ def get_all_comments(
     max_comments: int = 0,
     total_comments: int = 0,
     progress_callback: CommentProgressCallback | None = None,
+    enable_sub_reply_fetch: bool = True,
 ) -> list[dict]:
     all_comments: list[dict] = []
     total_fetched = 0
@@ -342,7 +335,7 @@ def get_all_comments(
             ),
         )
         if data.get("code") != 0:
-            raise RuntimeError(f"获取评论失败: {data.get('message', '未知错误')}")
+            raise RuntimeError(f"获取评论失败：{data.get('message', '未知错误')}")
 
         payload = data.get("data", {})
         cursor = payload.get("cursor", {})
@@ -351,7 +344,12 @@ def get_all_comments(
             break
 
         page_comments = [(comment, _format_comment(comment)) for comment in replies]
-        _fill_sub_replies_parallel(oid, page_comments)
+        if enable_sub_reply_fetch:
+            _fill_sub_replies_parallel(oid, page_comments)
+        else:
+            for raw_comment, formatted in page_comments:
+                inline_replies = raw_comment.get("replies") or []
+                formatted["replies"] = [_format_comment(reply) for reply in inline_replies]
 
         for _, formatted in page_comments:
             all_comments.append(formatted)
@@ -361,17 +359,13 @@ def get_all_comments(
                 progress_callback(
                     CommentProgress(
                         top_level_fetched=len(all_comments),
-                        top_level_target=(
-                            max(top_level_target, len(all_comments))
-                            if top_level_target is not None
-                            else None
-                        ),
+                        top_level_target=(max(top_level_target, len(all_comments)) if top_level_target is not None else None),
                         total_fetched=total_fetched,
                         total_target=total_target,
                     )
                 )
             if max_comments and len(all_comments) >= max_comments:
-                _log(f"已达到评论上限: {max_comments}")
+                _log(f"已达到评论上限：{max_comments}")
                 return all_comments[:max_comments]
 
         if cursor.get("is_end"):
@@ -380,7 +374,6 @@ def get_all_comments(
         next_offset = (cursor.get("pagination_reply") or {}).get("next_offset", "")
         if not next_offset or next_offset == offset:
             break
-
         offset = next_offset
         _log(f"已获取 {len(all_comments)} 条一级评论，继续下一页...")
 
@@ -394,7 +387,7 @@ def get_subtitles(aid: int, cid: int) -> list[dict]:
     player_data: dict | None = None
     player_errors: list[str] = []
     for api_name, api_url in [
-        ("播放器字幕接口", "https://api.bilibili.com/x/player/v2"),
+        ("播放器字幕接口", config.API_PLAYER),
         ("字幕信息接口", config.API_PLAYER_WBI),
     ]:
         try:
@@ -435,7 +428,7 @@ def get_subtitles(aid: int, cid: int) -> list[dict]:
         if url.startswith("//"):
             url = "https:" + url
 
-        _log(f"下载字幕: {lang}")
+        _log(f"下载字幕：{lang}")
         try:
             sub_data = _request_json(url, f"字幕下载接口({lang})", use_session=False)
         except Exception as exc:
@@ -465,5 +458,5 @@ def get_subtitles(aid: int, cid: int) -> list[dict]:
     selected_subtitles = _select_preferred_subtitles(all_subtitles)
     total_entries = sum(len(item["entries"]) for item in selected_subtitles)
     selected_label = ", ".join(item["lang"] for item in selected_subtitles)
-    _log(f"字幕获取完毕，已保留: {selected_label}，共 {total_entries} 条")
+    _log(f"字幕获取完毕，已保留：{selected_label}，共 {total_entries} 条")
     return selected_subtitles

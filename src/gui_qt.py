@@ -63,47 +63,73 @@ def _set_windows_app_id() -> None:
         pass
 
 
+def _resolve_login_state_text(settings: dict[str, str]) -> str:
+    login_mode = (settings.get("login_mode") or "none").strip().lower()
+    if login_mode == "cookie":
+        ok, message = bilibili_api.validate_cookie(settings.get("cookie", ""))
+        return message if ok else f"异常：{message}"
+    if login_mode == "sessdata":
+        ok, message = bilibili_api.validate_sessdata(settings.get("sessdata", ""))
+        return message if ok else f"异常：{message}"
+    return "未登录"
+
+
 class SettingsDialog(QDialog):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowTitle("客户端设置")
         self.setModal(True)
-        self.resize(720, 400)
+        self.resize(760, 560)
 
         settings = config.get_runtime_settings()
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
 
-        self.login_input = QLineEdit(settings["sessdata"])
-        self.login_input.setPlaceholderText("可填写 SESSDATA，或直接粘贴整串浏览器 Cookie；留空则按未登录方式运行")
-        self.login_input.setEchoMode(QLineEdit.PasswordEchoOnEdit)
+        self.login_mode_combo = QComboBox()
+        self.login_mode_combo.addItem("未登录", "none")
+        self.login_mode_combo.addItem("使用 SESSDATA", "sessdata")
+        self.login_mode_combo.addItem("使用整串 Cookie", "cookie")
+        current_mode = settings.get("login_mode", "none") or "none"
+        index = max(0, self.login_mode_combo.findData(current_mode))
+        self.login_mode_combo.setCurrentIndex(index)
+
+        self.sessdata_input = QLineEdit(settings.get("sessdata", ""))
+        self.sessdata_input.setPlaceholderText("只填浏览器 Cookie 里的 SESSDATA 值")
+        self.sessdata_input.setEchoMode(QLineEdit.PasswordEchoOnEdit)
+
+        self.cookie_input = QPlainTextEdit()
+        self.cookie_input.setPlaceholderText("可直接粘贴整串浏览器 Cookie")
+        self.cookie_input.setPlainText(settings.get("cookie", ""))
+        self.cookie_input.setMaximumHeight(96)
 
         output_row = QHBoxLayout()
         self.output_input = QLineEdit(settings["output_dir"])
-        self.output_input.setPlaceholderText("默认是项目根目录下的 output，建议尽量选择项目内路径")
+        self.output_input.setPlaceholderText("默认是项目根目录下的 output，也可以手动改")
         browse_button = QPushButton("选择...")
         browse_button.clicked.connect(self.choose_output_dir)
         output_row.addWidget(self.output_input, 1)
         output_row.addWidget(browse_button)
 
         self.api_key_input = QLineEdit(settings["minimax_api_key"])
-        self.api_key_input.setPlaceholderText("输入 MiniMax API Key，可留空")
+        self.api_key_input.setPlaceholderText("留空则跳过 AI 点评")
         self.api_key_input.setEchoMode(QLineEdit.PasswordEchoOnEdit)
 
         self.model_input = QLineEdit(settings["minimax_model"])
-        self.model_input.setPlaceholderText("例如: MiniMax-M2.7")
+        self.model_input.setPlaceholderText("例如：MiniMax-M2.7")
 
-        self.login_status_label = QLabel("待检测")
-        self.login_status_label.setWordWrap(True)
-        self.login_status_label.setStyleSheet("color: #5f6b7a;")
+        self.sessdata_status_label = QLabel("尚未检测")
+        self.cookie_status_label = QLabel("尚未检测")
+        self.api_status_label = QLabel("尚未检测")
+        for label in (self.sessdata_status_label, self.cookie_status_label, self.api_status_label):
+            label.setWordWrap(True)
+            label.setStyleSheet("color: #5f6b7a;")
 
-        self.api_status_label = QLabel("待检测")
-        self.api_status_label.setWordWrap(True)
-        self.api_status_label.setStyleSheet("color: #5f6b7a;")
-
-        form.addRow("B站登录信息", self.login_input)
-        form.addRow("登录检测", self.login_status_label)
+        form.addRow("登录方式", self.login_mode_combo)
+        form.addRow("SESSDATA", self.sessdata_input)
+        form.addRow("SESSDATA 检测", self.sessdata_status_label)
+        form.addRow("整串 Cookie", self.cookie_input)
+        form.addRow("Cookie 检测", self.cookie_status_label)
         form.addRow("输出文件夹", output_row)
         form.addRow("MiniMax API Key", self.api_key_input)
         form.addRow("API 检测", self.api_status_label)
@@ -118,18 +144,16 @@ class SettingsDialog(QDialog):
         layout.addLayout(detect_row)
 
         login_help = QLabel(
-            "填写提示：这里既支持只填 SESSDATA，也支持直接粘贴整串浏览器 Cookie。"
-            "如果楼中楼或字幕接口不稳定，优先尝试粘贴整串 Cookie。登录 B站后按 F12，在 Cookies 中复制 SESSDATA 的 Value，或直接复制请求里的整串 Cookie。"
+            "填写提示：可以二选一。\n"
+            "1. 选择“使用 SESSDATA”时，只填 SESSDATA 的值，不要粘贴整串 Cookie。\n"
+            "2. 选择“使用整串 Cookie”时，可以直接把浏览器里的整串 Cookie 粘贴进来。\n"
+            "3. 选择“未登录”时，两项都可以留空。"
         )
         login_help.setWordWrap(True)
         login_help.setStyleSheet("color: #5f6b7a;")
         layout.addWidget(login_help)
 
-        hint = QLabel(
-            "这些设置只保存在本机，不会默认上传。"
-            "B站登录信息留空时，程序会按未登录方式运行；"
-            "输出文件夹默认是项目根目录下的 output，建议尽量选择项目内路径。"
-        )
+        hint = QLabel("这些设置只保存在本机，不会默认上传。输出文件夹默认是项目根目录下的 output。")
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #5f6b7a;")
         layout.addWidget(hint)
@@ -139,41 +163,68 @@ class SettingsDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+        self.login_mode_combo.currentIndexChanged.connect(self._apply_login_mode_state)
+        self._apply_login_mode_state()
+
+    def _apply_login_mode_state(self) -> None:
+        mode = self.login_mode_combo.currentData()
+        self.sessdata_input.setEnabled(mode == "sessdata")
+        self.cookie_input.setEnabled(mode == "cookie")
+
     def choose_output_dir(self) -> None:
         directory = QFileDialog.getExistingDirectory(
             self,
-            "选择输出文件夹",
+            "选择输出目录",
             self.output_input.text().strip() or config.get_output_dir(),
         )
         if directory:
             self.output_input.setText(directory)
 
-    def run_validation(self) -> tuple[bool, bool]:
-        sessdata = self.login_input.text().strip()
+    def run_validation(self) -> tuple[bool, bool, bool]:
+        sessdata = self.sessdata_input.text().strip()
+        cookie = self.cookie_input.toPlainText().strip()
         api_key = self.api_key_input.text().strip()
         model = self.model_input.text().strip() or "MiniMax-M2.7"
 
-        login_ok, login_message = bilibili_api.validate_sessdata(sessdata)
+        sess_ok, sess_message = bilibili_api.validate_sessdata(sessdata)
+        cookie_ok, cookie_message = bilibili_api.validate_cookie(cookie)
         api_ok, api_message = minimax_client.validate_api_key(api_key, model)
 
-        self.login_status_label.setText(login_message)
-        self.login_status_label.setStyleSheet(f"color: {'#1f7a1f' if login_ok else '#c0392b'};")
+        self.sessdata_status_label.setText(sess_message)
+        self.sessdata_status_label.setStyleSheet(f"color: {'#1f7a1f' if sess_ok else '#c0392b'};")
+        self.cookie_status_label.setText(cookie_message)
+        self.cookie_status_label.setStyleSheet(f"color: {'#1f7a1f' if cookie_ok else '#c0392b'};")
         self.api_status_label.setText(api_message)
         self.api_status_label.setStyleSheet(f"color: {'#1f7a1f' if api_ok else '#c0392b'};")
-        return login_ok, api_ok
+        return sess_ok, cookie_ok, api_ok
 
     def accept(self) -> None:
         output_dir = self.output_input.text().strip() or config.DEFAULT_OUTPUT_DIR
-        sessdata = self.login_input.text().strip()
+        login_mode = self.login_mode_combo.currentData()
+        sessdata = self.sessdata_input.text().strip()
+        cookie = self.cookie_input.toPlainText().strip()
         api_key = self.api_key_input.text().strip()
         model = self.model_input.text().strip() or "MiniMax-M2.7"
 
-        login_ok, api_ok = self.run_validation()
-        if not login_ok or not api_ok:
-            QMessageBox.warning(self, "检测未通过", "请先根据检测结果修正设置后再保存。")
+        sess_ok, cookie_ok, api_ok = self.run_validation()
+
+        if login_mode == "sessdata" and not sessdata:
+            QMessageBox.warning(self, "缺少登录信息", "你选择了 SESSDATA 登录，请填写 SESSDATA。")
+            return
+        if login_mode == "cookie" and not cookie:
+            QMessageBox.warning(self, "缺少登录信息", "你选择了整串 Cookie 登录，请填写整串 Cookie。")
+            return
+        if login_mode == "sessdata" and not sess_ok:
+            QMessageBox.warning(self, "登录信息无效", "SESSDATA 检测未通过，请检查后再保存。")
+            return
+        if login_mode == "cookie" and not cookie_ok:
+            QMessageBox.warning(self, "登录信息无效", "整串 Cookie 检测未通过，请检查后再保存。")
+            return
+        if not api_ok:
+            QMessageBox.warning(self, "API 设置无效", "MiniMax API Key 或模型检测未通过，请检查后再保存。")
             return
 
-        config.save_runtime_settings(sessdata, output_dir, api_key, model)
+        config.save_runtime_settings(login_mode, sessdata, cookie, output_dir, api_key, model)
         super().accept()
 
 
@@ -233,7 +284,7 @@ class MainWindow(QMainWindow):
 
         input_row = QHBoxLayout()
         self.video_input = QLineEdit()
-        self.video_input.setPlaceholderText("例如: BV1xx411c7mD 或 https://www.bilibili.com/video/BV...")
+        self.video_input.setPlaceholderText("例如：BV1xx411c7mD 或 https://www.bilibili.com/video/BV...")
         self.start_button = QPushButton("开始保存")
         self.start_button.clicked.connect(self.start_save)
         input_row.addWidget(self.video_input, 1)
@@ -288,7 +339,10 @@ class MainWindow(QMainWindow):
         )
         layout.addWidget(self.progress_bar)
 
-        self.status_label = QLabel("状态: 等待输入")
+        self.status_label = QLabel("状态：等待输入")
+        self.status_label.setWordWrap(True)
+        self.status_label.setTextFormat(Qt.PlainText)
+        self.status_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.status_label.setStyleSheet("color: #0f5c8a;")
         layout.addWidget(self.status_label)
 
@@ -325,18 +379,13 @@ class MainWindow(QMainWindow):
 
         self.log_output = QPlainTextEdit()
         self.log_output.setReadOnly(True)
+        self.log_output.setLineWrapMode(QPlainTextEdit.WidgetWidth)
         self.log_output.setPlaceholderText("运行日志会显示在这里...")
         layout.addWidget(self.log_output, 1)
 
     def _refresh_settings_hint(self) -> None:
         settings = config.get_runtime_settings()
-        login_info = settings["sessdata"].strip()
-        if not login_info:
-            login_state = "未登录"
-        else:
-            login_ok, login_message = bilibili_api.validate_sessdata(login_info)
-            login_state = login_message if login_ok else f"异常：{login_message}"
-
+        login_state = _resolve_login_state_text(settings)
         self.hint.setText(
             f"支持评论抓取、字幕导出、视频下载和 AI 点评。当前输出目录：{settings['output_dir']}；B站状态：{login_state}。"
         )
@@ -388,25 +437,26 @@ class MainWindow(QMainWindow):
 
         self.log_output.appendPlainText(
             (
-                f"最终汇总: 一级评论 {result.total_comments} 条；"
+                f"最终汇总：一级评论 {result.total_comments} 条；"
                 f"子评论 {result.total_replies} 条；已抓取总评论 {result.total_units_fetched} 条；"
                 f"页面显示总评论 {result.total_units_target} 条"
             )
         )
+        self.log_output.appendPlainText(f"说明：{result.summary_note}")
         if result.video_path:
-            self.log_output.appendPlainText(f"视频文件: {result.video_path}")
-        self.status_label.setText(f"状态: 处理完成，已抓取评论 {result.total_units_fetched} 条")
+            self.log_output.appendPlainText(f"视频文件：{result.video_path}")
+        self.status_label.setText(f"状态：{_short_message('处理完成，' + result.summary_note, 160)}")
         self.progress_bar.setValue(100)
         self._set_busy(False)
 
     def on_failure(self, message: str) -> None:
-        self._update_progress(f"处理失败: {message}", 100)
-        QMessageBox.critical(self, "处理失败", message)
+        self._update_progress(f"处理失败：{message}", 100)
+        QMessageBox.critical(self, "处理失败", _short_message(message, 300))
         self._set_busy(False)
 
     def _update_progress(self, message: str, value: int) -> None:
         self.log_output.appendPlainText(message)
-        self.status_label.setText(f"状态: {message} ({value}%)")
+        self.status_label.setText(f"状态：{_short_message(message, 160)} ({value}%)")
         self.progress_bar.setValue(max(0, min(value, 100)))
 
     def open_output_dir(self) -> None:
@@ -434,7 +484,7 @@ class MainWindow(QMainWindow):
         self.last_output_dir = ""
         self.log_output.clear()
         self.progress_bar.setValue(0)
-        self.status_label.setText("状态: 等待输入")
+        self.status_label.setText("状态：等待输入")
 
 
 def run_gui() -> None:
