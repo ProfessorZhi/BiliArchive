@@ -46,6 +46,9 @@ class SaveResult:
     root_comments_complete: bool
     reply_gap: int
     summary_note: str
+    subtitle_source_type: str
+    subtitle_source_api: str
+    subtitle_note: str
 
 
 def _emit(progress_callback: ProgressCallback | None, message: str, percent: int) -> None:
@@ -108,8 +111,13 @@ def save_bilibili_video(
         _emit(progress_callback, login_message, 18)
         _emit(progress_callback, "当前未使用有效登录，楼中楼与部分字幕接口可能受限。", 22)
 
-    subtitles = bilibili_api.get_subtitles(video_info["aid"], video_info["cid"])
+    subtitle_bundle = bilibili_api.get_subtitles_bundle(video_info["aid"], video_info["cid"])
+    subtitles = subtitle_bundle["subtitles"]
+    subtitle_source_type = subtitle_bundle["source_type"]
+    subtitle_source_api = subtitle_bundle["source_api"]
+    subtitle_note = subtitle_bundle["note"]
     _emit(progress_callback, f"字幕获取完成，共 {len(subtitles)} 组", 25)
+    _emit(progress_callback, f"字幕来源：{subtitle_source_type}（{subtitle_source_api}）。{subtitle_note}", 25)
 
     last_progress_emit = {"fetched": -1, "percent": -1}
 
@@ -197,6 +205,9 @@ def save_bilibili_video(
             "login_ok": login_ok,
             "login_message": login_message,
             "summary_note": summary_note,
+            "subtitle_source_type": subtitle_source_type,
+            "subtitle_source_api": subtitle_source_api,
+            "subtitle_note": subtitle_note,
         },
     }
 
@@ -250,4 +261,7 @@ def save_bilibili_video(
         root_comments_complete=root_comments_complete,
         reply_gap=reply_gap,
         summary_note=summary_note,
+        subtitle_source_type=subtitle_source_type,
+        subtitle_source_api=subtitle_source_api,
+        subtitle_note=subtitle_note,
     )

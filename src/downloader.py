@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-Bilibili 视频下载模块。
-"""
+"""Bilibili 视频下载模块。"""
 
 from __future__ import annotations
 
@@ -106,6 +104,7 @@ def _build_ydl_opts(
     ffmpeg_location: str | None,
     progress_hook,
 ) -> dict:
+    cookie_header = config.build_cookie_header()
     ydl_opts = {
         "outtmpl": os.path.join(output_dir, f"{bvid}.%(ext)s"),
         "format": format_selector,
@@ -118,12 +117,22 @@ def _build_ydl_opts(
         },
         "cookiefile": None,
     }
+    if cookie_header:
+        ydl_opts["http_headers"]["Cookie"] = cookie_header
     if ffmpeg_location:
         ydl_opts["merge_output_format"] = "mp4"
         ydl_opts["ffmpeg_location"] = ffmpeg_location
-    if config.SESSDATA:
-        ydl_opts["http_headers"]["Cookie"] = f"SESSDATA={config.SESSDATA}"
     return ydl_opts
+
+
+def _describe_stream(info_dict: dict) -> str:
+    vcodec = info_dict.get("vcodec")
+    acodec = info_dict.get("acodec")
+    if vcodec and vcodec != "none" and acodec == "none":
+        return "视频流"
+    if acodec and acodec != "none" and vcodec == "none":
+        return "音频流"
+    return "媒体流"
 
 
 def _download_once(
@@ -138,18 +147,29 @@ def _download_once(
     requested_quality: str,
     fallback_used: bool,
 ) -> str:
+    last_progress = {"stream": "", "percent": -1}
+
     def on_progress(status: dict) -> None:
         stage = status.get("status")
+        info_dict = status.get("info_dict") or {}
+        stream_label = _describe_stream(info_dict)
         if stage == "downloading":
             downloaded = status.get("downloaded_bytes", 0)
             total = status.get("total_bytes") or status.get("total_bytes_estimate") or 0
             if total:
                 percent = int(downloaded * 100 / total)
-                _emit(progress_callback, f"正在下载视频: {percent}%", percent)
-            else:
-                _emit(progress_callback, "正在下载视频...", 0)
+                if stream_label != last_progress["stream"] or percent != last_progress["percent"]:
+                    _emit(progress_callback, f"正在下载{stream_label}: {percent}%", percent)
+                    last_progress["stream"] = stream_label
+                    last_progress["percent"] = percent
+            elif last_progress["stream"] != stream_label:
+                _emit(progress_callback, f"正在下载{stream_label}...", 0)
+                last_progress["stream"] = stream_label
+                last_progress["percent"] = 0
         elif stage == "finished":
-            _emit(progress_callback, "视频下载完成，正在整理文件...", 100)
+            _emit(progress_callback, f"{stream_label}下载完成，正在整理文件...", 100)
+        elif stage == "post_process":
+            _emit(progress_callback, "正在合并音视频...", 100)
 
     ydl_opts = _build_ydl_opts(
         output_dir=output_dir,

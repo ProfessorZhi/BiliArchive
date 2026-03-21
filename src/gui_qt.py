@@ -465,6 +465,10 @@ class MainWindow(QMainWindow):
                 f"页面显示总评论 {result.total_units_target} 条"
             )
         )
+        self.log_output.appendPlainText(
+            f"字幕来源：{result.subtitle_source_type}（{result.subtitle_source_api}）"
+        )
+        self.log_output.appendPlainText(f"字幕说明：{result.subtitle_note}")
         self.log_output.appendPlainText(f"说明：{result.summary_note}")
         if result.video_path:
             self.log_output.appendPlainText(f"视频文件：{result.video_path}")

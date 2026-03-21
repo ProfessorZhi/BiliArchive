@@ -212,6 +212,11 @@ def _is_english_subtitle(subtitle: dict) -> bool:
     return lang.startswith("en") or "english" in name.lower() or "英文" in name
 
 
+def _is_ai_subtitle(subtitle: dict) -> bool:
+    lang = _normalize_lang_tag(subtitle.get("lan", ""))
+    return lang.startswith("ai-") or bool(subtitle.get("is_ai"))
+
+
 def _select_preferred_subtitles(subtitles: list[dict]) -> list[dict]:
     chinese = [item for item in subtitles if _is_chinese_subtitle(item)]
     english = [item for item in subtitles if _is_english_subtitle(item)]
@@ -400,11 +405,13 @@ def get_all_comments(
     return all_comments
 
 
-def get_subtitles(aid: int, cid: int) -> list[dict]:
+def get_subtitles_bundle(aid: int, cid: int) -> dict:
     _log("正在获取字幕...")
 
     player_data: dict | None = None
     player_errors: list[str] = []
+    fallback_player_data: dict | None = None
+    source_api = ""
     for api_name, api_url in [
         ("字幕信息接口", config.API_PLAYER_WBI),
         ("播放器字幕接口", config.API_PLAYER),
@@ -414,29 +421,56 @@ def get_subtitles(aid: int, cid: int) -> list[dict]:
                 api_url,
                 api_name,
                 params={"aid": aid, "cid": cid},
+                use_session=False,
             )
             if data.get("code") == 0:
-                player_data = data.get("data", {})
-                break
+                current_data = data.get("data", {}) or {}
+                subtitle_info = current_data.get("subtitle") or {}
+                subtitle_list = subtitle_info.get("subtitles") or []
+                if subtitle_list:
+                    player_data = current_data
+                    source_api = api_name
+                    break
+                if fallback_player_data is None:
+                    fallback_player_data = current_data
+                player_errors.append(f"{api_name}: 字幕列表为空")
+                continue
             player_errors.append(f"{api_name}: {data.get('message', '未知错误')}")
         except Exception as exc:
             player_errors.append(f"{api_name}: {exc}")
 
     if player_data is None:
+        player_data = fallback_player_data
+
+    if player_data is None:
         if player_errors:
-            _log(f"字幕接口请求失败，已跳过字幕：{player_errors[-1]}")
+            note = f"字幕接口请求失败，已跳过字幕：{player_errors[-1]}"
+            _log(note)
         else:
-            _log("字幕接口请求失败，已跳过字幕")
-        return []
+            note = "字幕接口请求失败，已跳过字幕"
+            _log(note)
+        return {
+            "subtitles": [],
+            "source_type": "未获取到字幕",
+            "source_api": "无",
+            "note": note,
+        }
 
     subtitle_info = player_data.get("subtitle") or {}
     subtitle_list = subtitle_info.get("subtitles") or []
     if not subtitle_list:
         if player_data.get("need_login_subtitle"):
-            _log("该视频字幕需要登录后才能访问，请在客户端设置中填写 B站登录信息。")
+            note = "该视频字幕需要登录后才能访问，请在客户端设置中填写 B站登录信息。"
+            _log(note)
         else:
-            _log("该视频没有可抓取字幕")
-        return []
+            note = "该视频没有公开字幕，或当前公开接口未返回可用字幕。"
+            _log(note)
+        return {
+            "subtitles": [],
+            "source_type": "未获取到字幕",
+            "source_api": source_api or "无",
+            "note": note,
+        }
 
     all_subtitles: list[dict] = []
     for sub_meta in subtitle_list:
@@ -466,16 +500,41 @@ def get_subtitles(aid: int, cid: int) -> list[dict]:
             {
                 "lang": lang,
                 "lan": sub_meta.get("lan", ""),
+                "is_ai": str(sub_meta.get("lan", "")).startswith("ai-"),
                 "entries": entries,
             }
         )
 
     if not all_subtitles:
-        _log("字幕接口可访问，但没有成功保存任何字幕，已跳过字幕")
-        return []
+        note = "字幕接口可访问，但没有成功保存任何字幕，已跳过字幕。"
+        _log(note)
+        return {
+            "subtitles": [],
+            "source_type": "未获取到字幕",
+            "source_api": source_api or "无",
+            "note": note,
+        }
 
     selected_subtitles = _select_preferred_subtitles(all_subtitles)
     total_entries = sum(len(item["entries"]) for item in selected_subtitles)
     selected_label = ", ".join(item["lang"] for item in selected_subtitles)
+    if selected_subtitles and all(_is_ai_subtitle(item) for item in selected_subtitles):
+        source_type = "AI 字幕"
+        note = "本次保存的是 B站返回的 AI 字幕。不同视频的字幕源可能不同，AI 字幕偶尔会出现串轨或内容不匹配。"
+    elif any(_is_ai_subtitle(item) for item in selected_subtitles):
+        source_type = "混合字幕"
+        note = "本次字幕中同时包含 AI 字幕和非 AI 字幕。"
+    else:
+        source_type = "人工/官方字幕"
+        note = "本次保存的是非 AI 字幕，通常更稳定。"
     _log(f"字幕获取完毕，已保留：{selected_label}，共 {total_entries} 条")
-    return selected_subtitles
+    return {
+        "subtitles": selected_subtitles,
+        "source_type": source_type,
+        "source_api": source_api or "未知接口",
+        "note": note,
+    }
+
+
+def get_subtitles(aid: int, cid: int) -> list[dict]:
+    return get_subtitles_bundle(aid, cid)["subtitles"]
