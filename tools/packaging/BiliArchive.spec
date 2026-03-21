@@ -1,16 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
 from PyInstaller.utils.hooks import collect_submodules
 
+PROJECT_ROOT = os.getcwd()
 
 hiddenimports = collect_submodules("yt_dlp")
 
-
 a = Analysis(
-    ["src/gui_qt.py"],
-    pathex=["src"],
+    [os.path.join(PROJECT_ROOT, "src", "gui_qt.py")],
+    pathex=[os.path.join(PROJECT_ROOT, "src")],
     binaries=[],
-    datas=[],
+    datas=[(os.path.join(PROJECT_ROOT, "assets", "app_icon.ico"), "assets")],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
@@ -28,7 +29,7 @@ exe = EXE(
     a.datas,
     [],
     name="BiliArchive",
-    icon="assets/app_icon.ico",
+    icon=os.path.join(PROJECT_ROOT, "assets", "app_icon.ico"),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

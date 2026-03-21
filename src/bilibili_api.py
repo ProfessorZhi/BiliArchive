@@ -34,6 +34,11 @@ _SESSION = requests.Session()
 _SESSION.headers.update(config.BASE_HEADERS)
 
 
+def refresh_session_headers() -> None:
+    _SESSION.headers.clear()
+    _SESSION.headers.update(config.BASE_HEADERS)
+
+
 def _log(message: str) -> None:
     try:
         print(message)

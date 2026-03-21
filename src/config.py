@@ -1,22 +1,27 @@
-# -*- coding: utf-8 -*-
-"""
-项目配置。
-"""
+﻿# -*- coding: utf-8 -*-
+"""项目配置。"""
 
 from __future__ import annotations
 
 import json
 import os
 import re
+import sys
+from typing import Any
 
 
 APP_NAME = "BiliArchive"
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
+
+if getattr(sys, "frozen", False):
+    PROJECT_ROOT = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+DEFAULT_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
 LOCAL_SETTINGS_PATH = os.path.join(PROJECT_ROOT, ".biliarchive.local.json")
 
 
-def _load_local_settings() -> dict:
+def _load_local_settings() -> dict[str, Any]:
     if not os.path.exists(LOCAL_SETTINGS_PATH):
         return {}
     try:
@@ -27,14 +32,17 @@ def _load_local_settings() -> dict:
         return {}
 
 
-def _save_local_settings(data: dict) -> None:
+def _save_local_settings(data: dict[str, Any]) -> None:
     with open(LOCAL_SETTINGS_PATH, "w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False, indent=2)
 
 
 _LOCAL_SETTINGS = _load_local_settings()
-
-SESSDATA = os.getenv("BILIBILI_SESSDATA", "")
+OUTPUT_DIR = os.getenv("BILIARCHIVE_OUTPUT_DIR", _LOCAL_SETTINGS.get("output_dir", DEFAULT_OUTPUT_DIR))
+SESSDATA = os.getenv("BILIBILI_SESSDATA", _LOCAL_SETTINGS.get("sessdata", ""))
+MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", _LOCAL_SETTINGS.get("minimax_api_key", ""))
+MINIMAX_BASE_URL = os.getenv("MINIMAX_BASE_URL", "https://api.minimaxi.com/v1")
+MINIMAX_MODEL = os.getenv("MINIMAX_MODEL", _LOCAL_SETTINGS.get("minimax_model", "MiniMax-M2.7"))
 
 BASE_HEADERS = {
     "User-Agent": (
@@ -44,8 +52,6 @@ BASE_HEADERS = {
     ),
     "Referer": "https://www.bilibili.com",
 }
-if SESSDATA:
-    BASE_HEADERS["Cookie"] = f"SESSDATA={SESSDATA}"
 
 API_VIDEO_INFO = "https://api.bilibili.com/x/web-interface/view"
 API_COMMENTS_MAIN = "https://api.bilibili.com/x/v2/reply/wbi/main"
@@ -59,9 +65,13 @@ COMMENT_PAGE_SIZE = 20
 REPLY_PAGE_SIZE = 20
 REQUEST_DELAY = 0.35
 
-MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", _LOCAL_SETTINGS.get("minimax_api_key", ""))
-MINIMAX_BASE_URL = os.getenv("MINIMAX_BASE_URL", "https://api.minimaxi.com/v1")
-MINIMAX_MODEL = os.getenv("MINIMAX_MODEL", _LOCAL_SETTINGS.get("minimax_model", "MiniMax-M2.7"))
+
+def _sync_headers() -> None:
+    global OUTPUT_DIR
+    OUTPUT_DIR = os.path.abspath((OUTPUT_DIR or DEFAULT_OUTPUT_DIR).strip())
+    BASE_HEADERS.pop("Cookie", None)
+    if SESSDATA:
+        BASE_HEADERS["Cookie"] = f"SESSDATA={SESSDATA}"
 
 
 def sanitize_filename(name: str) -> str:
@@ -72,17 +82,51 @@ def sanitize_filename(name: str) -> str:
     return name
 
 
-def save_minimax_settings(api_key: str, model: str) -> None:
-    global MINIMAX_API_KEY, MINIMAX_MODEL, _LOCAL_SETTINGS
+def get_output_dir() -> str:
+    return OUTPUT_DIR
 
-    api_key = api_key.strip()
-    model = model.strip() or "MiniMax-M2.7"
-    _LOCAL_SETTINGS["minimax_api_key"] = api_key
-    _LOCAL_SETTINGS["minimax_model"] = model
+
+def ensure_output_dir() -> str:
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    return OUTPUT_DIR
+
+
+def get_runtime_settings() -> dict[str, str]:
+    return {
+        "sessdata": SESSDATA,
+        "output_dir": OUTPUT_DIR,
+        "minimax_api_key": MINIMAX_API_KEY,
+        "minimax_model": MINIMAX_MODEL,
+    }
+
+
+def save_runtime_settings(
+    sessdata: str,
+    output_dir: str,
+    minimax_api_key: str | None = None,
+    minimax_model: str | None = None,
+) -> None:
+    global SESSDATA, OUTPUT_DIR, MINIMAX_API_KEY, MINIMAX_MODEL, _LOCAL_SETTINGS
+
+    SESSDATA = (sessdata or "").strip()
+    OUTPUT_DIR = os.path.abspath((output_dir or DEFAULT_OUTPUT_DIR).strip())
+    MINIMAX_API_KEY = (MINIMAX_API_KEY if minimax_api_key is None else minimax_api_key.strip())
+    MINIMAX_MODEL = (MINIMAX_MODEL if minimax_model is None else (minimax_model.strip() or "MiniMax-M2.7"))
+
+    _LOCAL_SETTINGS["sessdata"] = SESSDATA
+    _LOCAL_SETTINGS["output_dir"] = OUTPUT_DIR
+    _LOCAL_SETTINGS["minimax_api_key"] = MINIMAX_API_KEY
+    _LOCAL_SETTINGS["minimax_model"] = MINIMAX_MODEL
     _save_local_settings(_LOCAL_SETTINGS)
-    MINIMAX_API_KEY = api_key
-    MINIMAX_MODEL = model
+    _sync_headers()
+
+
+def save_minimax_settings(api_key: str, model: str) -> None:
+    save_runtime_settings(SESSDATA, OUTPUT_DIR, api_key, model)
 
 
 def get_minimax_settings() -> tuple[str, str]:
     return MINIMAX_API_KEY, MINIMAX_MODEL
+
+
+_sync_headers()

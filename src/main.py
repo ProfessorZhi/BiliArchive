@@ -1,7 +1,5 @@
-# -*- coding: utf-8 -*-
-"""
-CLI / GUI 入口。
-"""
+﻿# -*- coding: utf-8 -*-
+"""CLI / GUI 入口。"""
 
 from __future__ import annotations
 

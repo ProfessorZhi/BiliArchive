@@ -1,15 +1,15 @@
-# -*- coding: utf-8 -*-
-"""
-PySide6 客户端界面。
-"""
+﻿# -*- coding: utf-8 -*-
+"""PySide6 客户端界面。"""
 
 from __future__ import annotations
 
+import ctypes
 import os
 import sys
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(CURRENT_DIR)
+RESOURCE_ROOT = getattr(sys, "_MEIPASS", PROJECT_ROOT)
 if CURRENT_DIR not in sys.path:
     sys.path.insert(0, CURRENT_DIR)
 
@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -39,33 +40,69 @@ import config
 from app_service import SaveOptions, SaveResult, save_bilibili_video
 
 
-ICON_PATH = os.path.join(PROJECT_ROOT, "assets", "app_icon.ico")
+ICON_PATH = os.path.join(RESOURCE_ROOT, "assets", "app_icon.ico")
+APP_USER_MODEL_ID = "ProfessorZhi.BiliArchive"
 
 
-class MinimaxSettingsDialog(QDialog):
+def _set_windows_app_id() -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
+    except Exception:
+        pass
+
+
+class SettingsDialog(QDialog):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.setWindowTitle("MiniMax 设置")
+        self.setWindowTitle("客户端设置")
         self.setModal(True)
-        self.resize(520, 180)
+        self.resize(660, 300)
+
+        settings = config.get_runtime_settings()
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
 
-        api_key, model = config.get_minimax_settings()
+        self.login_input = QLineEdit(settings["sessdata"])
+        self.login_input.setPlaceholderText("这里只填 SESSDATA 的值；留空则按未登录方式运行")
+        self.login_input.setEchoMode(QLineEdit.PasswordEchoOnEdit)
 
-        self.api_key_input = QLineEdit(api_key)
+        output_row = QHBoxLayout()
+        self.output_input = QLineEdit(settings["output_dir"])
+        self.output_input.setPlaceholderText("默认是项目根目录下的 output，建议尽量选择项目内路径")
+        browse_button = QPushButton("选择...")
+        browse_button.clicked.connect(self.choose_output_dir)
+        output_row.addWidget(self.output_input, 1)
+        output_row.addWidget(browse_button)
+
+        self.api_key_input = QLineEdit(settings["minimax_api_key"])
+        self.api_key_input.setPlaceholderText("输入 MiniMax API Key，可留空")
         self.api_key_input.setEchoMode(QLineEdit.PasswordEchoOnEdit)
-        self.api_key_input.setPlaceholderText("输入 MiniMax API Key")
 
-        self.model_input = QLineEdit(model)
+        self.model_input = QLineEdit(settings["minimax_model"])
         self.model_input.setPlaceholderText("例如: MiniMax-M2.7")
 
-        form.addRow("API Key", self.api_key_input)
-        form.addRow("模型名", self.model_input)
+        form.addRow("B站登录信息", self.login_input)
+        form.addRow("输出文件夹", output_row)
+        form.addRow("MiniMax API Key", self.api_key_input)
+        form.addRow("MiniMax 模型", self.model_input)
         layout.addLayout(form)
 
-        hint = QLabel("设置会保存在项目根目录的 .biliarchive.local.json，仅本地使用。")
+        login_help = QLabel(
+            "填写提示：这里只填浏览器 Cookie 里的 SESSDATA 值，不要粘贴整串 Cookie。"
+            "登录 B站后按 F12，在 Cookies 中找到 SESSDATA 的 Value，复制到这里即可。"
+        )
+        login_help.setWordWrap(True)
+        login_help.setStyleSheet("color: #5f6b7a;")
+        layout.addWidget(login_help)
+
+        hint = QLabel(
+            "这些设置只保存在本机，不会默认上传。"
+            "B站登录信息留空时，程序会按未登录方式运行；"
+            "输出文件夹默认是项目根目录下的 output，建议尽量选择项目内路径。"
+        )
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #5f6b7a;")
         layout.addWidget(hint)
@@ -75,8 +112,20 @@ class MinimaxSettingsDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+    def choose_output_dir(self) -> None:
+        directory = QFileDialog.getExistingDirectory(
+            self,
+            "选择输出文件夹",
+            self.output_input.text().strip() or config.get_output_dir(),
+        )
+        if directory:
+            self.output_input.setText(directory)
+
     def accept(self) -> None:
-        config.save_minimax_settings(
+        output_dir = self.output_input.text().strip() or config.DEFAULT_OUTPUT_DIR
+        config.save_runtime_settings(
+            self.login_input.text(),
+            output_dir,
             self.api_key_input.text(),
             self.model_input.text(),
         )
@@ -112,10 +161,11 @@ class MainWindow(QMainWindow):
         self.worker: SaveWorker | None = None
         self.last_output_dir = ""
         self.setWindowTitle(config.APP_NAME)
-        self.resize(860, 680)
+        self.resize(900, 720)
         if os.path.exists(ICON_PATH):
             self.setWindowIcon(QIcon(ICON_PATH))
         self._build_ui()
+        self._refresh_settings_hint()
 
     def _build_ui(self) -> None:
         root = QWidget()
@@ -129,16 +179,14 @@ class MainWindow(QMainWindow):
         title.setStyleSheet("font-size: 20px; font-weight: 700; color: #1d232f;")
         layout.addWidget(title)
 
-        hint = QLabel("BiliArchive 支持评论预扫描、字幕导出、视频下载和 AI 点评。")
-        hint.setWordWrap(True)
-        hint.setStyleSheet("color: #5f6b7a;")
-        layout.addWidget(hint)
+        self.hint = QLabel()
+        self.hint.setWordWrap(True)
+        self.hint.setStyleSheet("color: #5f6b7a;")
+        layout.addWidget(self.hint)
 
         input_row = QHBoxLayout()
         self.video_input = QLineEdit()
-        self.video_input.setPlaceholderText(
-            "例如: BV1xx411c7mD 或 https://www.bilibili.com/video/BV..."
-        )
+        self.video_input.setPlaceholderText("例如: BV1xx411c7mD 或 https://www.bilibili.com/video/BV...")
         self.start_button = QPushButton("开始保存")
         self.start_button.clicked.connect(self.start_save)
         input_row.addWidget(self.video_input, 1)
@@ -162,14 +210,14 @@ class MainWindow(QMainWindow):
         self.ai_checkbox = QCheckBox("生成 AI 点评")
         self.ai_checkbox.setChecked(True)
 
-        self.ai_settings_button = QPushButton("AI 设置")
-        self.ai_settings_button.clicked.connect(self.open_ai_settings)
+        self.settings_button = QPushButton("客户端设置")
+        self.settings_button.clicked.connect(self.open_settings)
 
         options_row.addWidget(self.max_comments_input)
         options_row.addWidget(self.download_checkbox)
         options_row.addWidget(self.quality_combo)
         options_row.addWidget(self.ai_checkbox)
-        options_row.addWidget(self.ai_settings_button)
+        options_row.addWidget(self.settings_button)
         options_row.addStretch(1)
         layout.addLayout(options_row)
 
@@ -210,11 +258,14 @@ class MainWindow(QMainWindow):
         self.json_value.setReadOnly(True)
         self.markdown_value = QLineEdit()
         self.markdown_value.setReadOnly(True)
+        self.video_path_value = QLineEdit()
+        self.video_path_value.setReadOnly(True)
 
         form.addRow("视频标题", self.title_value)
         form.addRow("输出目录", self.output_value)
         form.addRow("JSON 文件", self.json_value)
         form.addRow("Markdown 文件", self.markdown_value)
+        form.addRow("视频文件", self.video_path_value)
         layout.addLayout(form)
 
         action_row = QHBoxLayout()
@@ -230,13 +281,21 @@ class MainWindow(QMainWindow):
         self.log_output.setPlaceholderText("运行日志会显示在这里...")
         layout.addWidget(self.log_output, 1)
 
+    def _refresh_settings_hint(self) -> None:
+        settings = config.get_runtime_settings()
+        login_state = "已登录" if settings["sessdata"] else "未登录"
+        self.hint.setText(
+            f"支持评论抓取、字幕导出、视频下载和 AI 点评。当前输出目录：{settings['output_dir']}；B站状态：{login_state}。"
+        )
+
     def on_download_toggled(self, checked: bool) -> None:
         self.quality_combo.setEnabled(checked)
 
-    def open_ai_settings(self) -> None:
-        dialog = MinimaxSettingsDialog(self)
+    def open_settings(self) -> None:
+        dialog = SettingsDialog(self)
         if dialog.exec():
-            QMessageBox.information(self, "保存成功", "MiniMax 设置已保存。")
+            self._refresh_settings_hint()
+            QMessageBox.information(self, "保存成功", "客户端设置已保存，当前窗口后续操作会直接使用新设置。")
 
     def start_save(self) -> None:
         video_input = self.video_input.text().strip()
@@ -270,18 +329,20 @@ class MainWindow(QMainWindow):
         self.output_value.setText(result.output_dir)
         self.json_value.setText(result.json_path)
         self.markdown_value.setText(result.markdown_path)
+        self.video_path_value.setText(result.video_path or "")
         self.last_output_dir = result.output_dir
         self.open_button.setEnabled(True)
 
         self.log_output.appendPlainText(
             (
-                f"最终汇总: 一级评论 {result.total_comments}/{result.comment_target_count}；"
-                f"子评论 {result.total_replies}；总评论 {result.total_units_fetched}/{result.total_units_target}"
+                f"最终汇总: 一级评论 {result.total_comments} 条；"
+                f"子评论 {result.total_replies} 条；已抓取总评论 {result.total_units_fetched} 条；"
+                f"页面显示总评论 {result.total_units_target} 条"
             )
         )
-        self.status_label.setText(
-            f"状态: 处理完成，总评论 {result.total_units_fetched}/{result.total_units_target}"
-        )
+        if result.video_path:
+            self.log_output.appendPlainText(f"视频文件: {result.video_path}")
+        self.status_label.setText(f"状态: 处理完成，已抓取评论 {result.total_units_fetched} 条")
         self.progress_bar.setValue(100)
         self._set_busy(False)
 
@@ -308,13 +369,14 @@ class MainWindow(QMainWindow):
         self.download_checkbox.setEnabled(not busy)
         self.quality_combo.setEnabled(not busy and self.download_checkbox.isChecked())
         self.ai_checkbox.setEnabled(not busy)
-        self.ai_settings_button.setEnabled(not busy)
+        self.settings_button.setEnabled(not busy)
 
     def _clear_result(self) -> None:
         self.title_value.clear()
         self.output_value.clear()
         self.json_value.clear()
         self.markdown_value.clear()
+        self.video_path_value.clear()
         self.open_button.setEnabled(False)
         self.last_output_dir = ""
         self.log_output.clear()
@@ -323,6 +385,7 @@ class MainWindow(QMainWindow):
 
 
 def run_gui() -> None:
+    _set_windows_app_id()
     app = QApplication(sys.argv)
     if os.path.exists(ICON_PATH):
         app.setWindowIcon(QIcon(ICON_PATH))

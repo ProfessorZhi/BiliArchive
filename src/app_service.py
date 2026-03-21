@@ -1,7 +1,5 @@
-# -*- coding: utf-8 -*-
-"""
-CLI 和 GUI 共用的业务流程。
-"""
+﻿# -*- coding: utf-8 -*-
+"""CLI 和 GUI 共用的业务流程。"""
 
 from __future__ import annotations
 
@@ -66,6 +64,9 @@ def save_bilibili_video(
 ) -> SaveResult:
     options = options or SaveOptions()
 
+    config.ensure_output_dir()
+    bilibili_api.refresh_session_headers()
+
     bvid = bilibili_api.extract_bvid(video_input)
     _emit(progress_callback, f"已识别视频: {bvid}", 5)
 
@@ -85,11 +86,11 @@ def save_bilibili_video(
 
     def on_comment_progress(progress: bilibili_api.CommentProgress) -> None:
         percent = _map_range(25, 68, progress.total_fetched, max(progress.total_target, 1))
-        _emit(
-            progress_callback,
-            f"总评论进度: {progress.total_fetched}/{progress.total_target}",
-            percent,
-        )
+        if progress.total_target > 0:
+            message = f"已抓取评论 {progress.total_fetched} 条，页面显示总评论 {progress.total_target} 条"
+        else:
+            message = f"已抓取评论 {progress.total_fetched} 条"
+        _emit(progress_callback, message, percent)
 
     comments = bilibili_api.get_all_comments(
         video_info["aid"],
@@ -109,8 +110,9 @@ def save_bilibili_video(
     _emit(
         progress_callback,
         (
-            f"评论汇总: 一级评论 {len(comments)}/{final_top_level_target}；"
-            f"子评论 {total_replies}；总评论 {total_units_fetched}/{total_comment_target}"
+            f"评论汇总: 一级评论 {len(comments)} 条；"
+            f"子评论 {total_replies} 条；已抓取总评论 {total_units_fetched} 条；"
+            f"页面显示总评论 {total_comment_target} 条"
         ),
         68,
     )
@@ -147,7 +149,7 @@ def save_bilibili_video(
 
     safe_title = config.sanitize_filename(video_info["title"])
     folder_name = f"{safe_title}_{bvid}"
-    output_dir = os.path.join(config.OUTPUT_DIR, folder_name)
+    output_dir = os.path.join(config.get_output_dir(), folder_name)
     os.makedirs(output_dir, exist_ok=True)
 
     json_path = os.path.join(output_dir, f"{bvid}.json")
