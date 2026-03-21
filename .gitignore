@@ -13,6 +13,9 @@ dist/
 output/
 .biliarchive.local.json
 local_env.bat
+.env
+.env.*
+*.log
 
 # Tooling
 .agent/
