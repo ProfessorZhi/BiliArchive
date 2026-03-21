@@ -94,6 +94,8 @@ def export_markdown(data: dict, filepath: str) -> None:
     total_replies = sum(len(comment.get("replies", [])) for comment in comments)
 
     lines: list[str] = []
+    lines.append("<!-- markdownlint-disable -->")
+    lines.append("")
     lines.append(f"# {video['title']}")
     lines.append("")
     lines.append(f"> **BV号**: {video['bvid']}  ")
@@ -188,6 +190,8 @@ def export_markdown(data: dict, filepath: str) -> None:
             lines.append("")
 
     lines.append("</details>")
+    lines.append("")
+    lines.append("<!-- markdownlint-enable -->")
 
     with open(filepath, "w", encoding="utf-8") as file:
         file.write("\n".join(lines))
