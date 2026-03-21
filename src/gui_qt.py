@@ -153,6 +153,29 @@ class SettingsDialog(QDialog):
         login_help.setStyleSheet("color: #5f6b7a;")
         layout.addWidget(login_help)
 
+        cookie_help = QLabel(
+            "如何找到整串 Cookie：\n"
+            "1. 先在浏览器里登录 B站并打开任意一个 B站页面。\n"
+            "2. 按 F12 打开开发者工具，切到“网络(Network)”或“应用(Application/存储)”面板。\n"
+            "3. 如果用 Network：刷新页面，点开任意一个发往 bilibili.com 的请求，在 Request Headers 里找到 Cookie，复制整串内容。\n"
+            "4. 如果用 Application/存储：打开 Cookies，选择 bilibili.com，把需要的 Cookie 项拼成一整串后再粘贴。\n"
+            "5. 整串 Cookie 通常像这样：SESSDATA=...; bili_jct=...; DedeUserID=...; buvid3=..."
+        )
+        cookie_help.setWordWrap(True)
+        cookie_help.setStyleSheet("color: #5f6b7a;")
+        layout.addWidget(cookie_help)
+
+        sessdata_help = QLabel(
+            "如何找到 SESSDATA：\n"
+            "1. 在浏览器里登录 B站后按 F12。\n"
+            "2. 打开“应用(Application/存储)”面板，再打开 Cookies。\n"
+            "3. 选择 bilibili.com，找到名称为 SESSDATA 的条目。\n"
+            "4. 只复制它的 Value 值粘贴到这里，不要带前面的 SESSDATA=，也不要把整串 Cookie 都贴进来。"
+        )
+        sessdata_help.setWordWrap(True)
+        sessdata_help.setStyleSheet("color: #5f6b7a;")
+        layout.addWidget(sessdata_help)
+
         hint = QLabel("这些设置只保存在本机，不会默认上传。输出文件夹默认是项目根目录下的 output。")
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #5f6b7a;")

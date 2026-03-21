@@ -90,14 +90,63 @@ python src/main.py <BV号或视频链接>
 
 ### B站登录信息
 
-- 可以填写 B 站登录信息
-- 也可以留空
-- 留空时程序会按未登录方式运行
+客户端支持三种方式：
+
+- `未登录`
+- `使用 SESSDATA`
+- `使用整串 Cookie`
 
 说明：
 
-- 某些视频或评论在登录状态下更稳定
+- 某些视频、楼中楼评论、字幕接口在登录状态下更稳定
 - 登录信息只保存在本机，不会写进仓库源码
+- `SESSDATA` 和 `整串 Cookie` 二选一即可，不需要同时填写
+
+### 如何找到 SESSDATA
+
+1. 在浏览器中登录 B站
+2. 按 `F12` 打开开发者工具
+3. 打开 `应用(Application)` 或 `存储`
+4. 找到 `Cookies`
+5. 选择 `bilibili.com`
+6. 找到名称为 `SESSDATA` 的那一项
+7. 只复制它的 `Value` 值
+
+注意：
+
+- 这里只复制值本身
+- 不要带前面的 `SESSDATA=`
+- 不要把整串 Cookie 全部粘贴进 SESSDATA 输入框
+
+### 如何找到整串 Cookie
+
+方法一：在 `Network` 面板中复制
+
+1. 在浏览器中登录 B站并打开任意 B站页面
+2. 按 `F12` 打开开发者工具
+3. 切到 `网络(Network)` 面板
+4. 刷新页面
+5. 点开任意一个发往 `bilibili.com` 的请求
+6. 在 `Request Headers` 中找到 `Cookie`
+7. 复制整串值，直接粘贴到客户端
+
+方法二：在 `Application/存储` 面板中查看
+
+1. 打开 `Application(应用)` 或 `存储`
+2. 找到 `Cookies`
+3. 选择 `bilibili.com`
+4. 可以看到多项 Cookie，例如：
+   - `SESSDATA`
+   - `bili_jct`
+   - `DedeUserID`
+   - `buvid3`
+5. 整串 Cookie 通常会长这样：
+
+```text
+SESSDATA=...; bili_jct=...; DedeUserID=...; buvid3=...
+```
+
+如果你不确定，优先用 `Network` 面板里请求头中的 `Cookie`，复制最省事。
 
 ### 输出文件夹
 
