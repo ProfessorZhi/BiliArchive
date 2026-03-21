@@ -63,6 +63,7 @@ BASE_HEADERS = {
 API_VIDEO_INFO = "https://api.bilibili.com/x/web-interface/view"
 API_COMMENTS_MAIN = "https://api.bilibili.com/x/v2/reply/wbi/main"
 API_COMMENTS_DETAIL = "https://api.bilibili.com/x/v2/reply/detail"
+API_COMMENTS_REPLY = "https://api.bilibili.com/x/v2/reply/reply"
 API_COMMENTS_COUNT = "https://api.bilibili.com/x/v2/reply/count"
 API_PLAYER = "https://api.bilibili.com/x/player/v2"
 API_PLAYER_WBI = "https://api.bilibili.com/x/player/wbi/v2"

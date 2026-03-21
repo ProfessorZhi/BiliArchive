@@ -233,45 +233,64 @@ def _get_sub_replies(oid: int, root_rpid: int) -> list[dict]:
     all_replies: list[dict] = []
     seen: set[int] = set()
 
-    data = _request_json(
-        config.API_COMMENTS_DETAIL,
-        "子评论详情接口",
-        params={
-            "oid": oid,
-            "type": 1,
-            "root": root_rpid,
-            "ps": config.REPLY_PAGE_SIZE,
-        },
-    )
-    if data.get("code") != 0:
-        _log(f"获取子评论失败（rpid={root_rpid}）：{data.get('message', '未知错误')}")
-        return all_replies
+    page_num = 1
+    expected_total: int | None = None
+    while True:
+        data = _request_json(
+            config.API_COMMENTS_REPLY,
+            "子评论列表接口",
+            params={
+                "oid": oid,
+                "type": 1,
+                "root": root_rpid,
+                "ps": config.REPLY_PAGE_SIZE,
+                "pn": page_num,
+            },
+        )
+        if data.get("code") != 0:
+            _log(f"获取子评论失败（rpid={root_rpid}）：{data.get('message', '未知错误')}")
+            return all_replies
 
-    root = data.get("data", {}).get("root") or {}
-    replies = root.get("replies") or []
-    for reply in replies:
-        reply_rpid = int(reply.get("rpid") or 0)
-        if reply_rpid and reply_rpid in seen:
-            continue
-        if reply_rpid:
-            seen.add(reply_rpid)
-        all_replies.append(_format_comment(reply))
+        payload = data.get("data") or {}
+        replies = payload.get("replies") or []
+        page = payload.get("page") or {}
+        if expected_total is None:
+            try:
+                expected_total = int(page.get("count") or 0)
+            except Exception:
+                expected_total = 0
+
+        if not replies:
+            break
+
+        page_added = 0
+        for reply in replies:
+            reply_rpid = int(reply.get("rpid") or 0)
+            if reply_rpid and reply_rpid in seen:
+                continue
+            if reply_rpid:
+                seen.add(reply_rpid)
+            all_replies.append(_format_comment(reply))
+            page_added += 1
+
+        if page_added <= 0:
+            break
+        if expected_total and len(all_replies) >= expected_total:
+            break
+        if len(replies) < config.REPLY_PAGE_SIZE:
+            break
+        page_num += 1
+
     return all_replies
 
 
 def _should_fetch_sub_replies(raw_comment: dict) -> bool:
     inline_replies = raw_comment.get("replies") or []
-    if inline_replies:
+    inline_count = len(inline_replies)
+    reply_count = int(raw_comment.get("rcount") or 0)
+    if reply_count > inline_count:
         return True
-    if int(raw_comment.get("rcount") or 0) > 0:
-        return True
-
-    reply_control = raw_comment.get("reply_control") or {}
-    if reply_control.get("sub_reply_entry_text"):
-        return True
-    if int(reply_control.get("max_line") or 0) > 0:
-        return True
-    if reply_control.get("location"):
+    if reply_count > 0 and inline_count <= 0:
         return True
     return False
 
@@ -387,8 +406,8 @@ def get_subtitles(aid: int, cid: int) -> list[dict]:
     player_data: dict | None = None
     player_errors: list[str] = []
     for api_name, api_url in [
-        ("播放器字幕接口", config.API_PLAYER),
         ("字幕信息接口", config.API_PLAYER_WBI),
+        ("播放器字幕接口", config.API_PLAYER),
     ]:
         try:
             data = _request_json(
