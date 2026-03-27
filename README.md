@@ -60,6 +60,7 @@ assets/                     图标等资源
 docs/                       项目文档与用户指南
 src/                        主程序源码
 tools/packaging/            EXE 打包配置与脚本
+tools/release/              Release 说明更新脚本
 启动 BiliArchive.bat         Windows 启动脚本
 requirements.txt            Python 依赖
 README.md                   项目介绍
@@ -78,6 +79,22 @@ tools/packaging/build_biliarchive.bat
 ```text
 dist/BiliArchive.exe
 ```
+
+## Release 说明
+
+如果需要更新 GitHub Release 说明，建议先把内容写到 UTF-8 编码的 Markdown 文件，再执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/release/edit_release_notes.ps1 -Tag v0.1.0
+```
+
+默认会读取：
+
+```text
+release-notes-v0.1.0.md
+```
+
+这样可以尽量避免 Windows 终端在创建或更新 Release 时把中文写成 `?`。
 
 ## 安全说明
 
